@@ -1,19 +1,44 @@
 import { ConflictException, Injectable, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as argon2 from 'argon2';
+import { randomBytes } from 'node:crypto';
 
 import { toPublicUser } from '../users/user.public';
 import type { PublicUser } from '../users/user.public';
+import type { UserDocument } from '../users/user.schema';
 import { UsersService } from '../users/users.service';
 import type { SignInInput, SignUpInput } from './auth.contracts';
 import type { JwtPayload } from './jwt.types';
+import { RefreshTokensService } from './refresh-tokens.service';
 
-export interface AuthResult {
+export interface AuthSession {
   user: PublicUser;
   accessToken: string;
+  refreshToken: string;
+}
+
+export interface RefreshResult {
+  accessToken: string;
+  refreshToken: string;
 }
 
 const DUPLICATE_KEY_ERROR = 11000;
+const INVALID_CREDENTIALS = 'Invalid email or password';
+const INVALID_REFRESH_TOKEN = 'Invalid refresh token';
+
+const HASH_OPTIONS = { type: argon2.argon2id } as const;
+
+/**
+ * Verified against when no user matches, so the unknown-email path does the same
+ * argon2 work as the wrong-password path. Built with HASH_OPTIONS — the same cost
+ * parameters sign-up uses — because a cheaper hash would return faster and
+ * rebuild the very side channel this closes.
+ *
+ * This narrows enumeration but does not close it: sign-up still answers 409 for
+ * an address that already exists, which remains a direct oracle.
+ */
+const DUMMY_PASSWORD_HASH = argon2.hash(randomBytes(32).toString('hex'), HASH_OPTIONS);
+DUMMY_PASSWORD_HASH.catch(() => undefined);
 
 function isDuplicateKeyError(error: unknown): boolean {
   return typeof error === 'object' && error !== null && 'code' in error
@@ -26,20 +51,21 @@ export class AuthService {
   constructor(
     private readonly users: UsersService,
     private readonly jwt: JwtService,
+    private readonly refreshTokens: RefreshTokensService,
   ) {}
 
-  async signUp(input: SignUpInput): Promise<AuthResult> {
+  async signUp(input: SignUpInput): Promise<AuthSession> {
     const email = input.email.toLowerCase();
 
     if (await this.users.findByEmail(email)) {
       throw new ConflictException('Email already registered');
     }
 
-    const passwordHash = await argon2.hash(input.password, { type: argon2.argon2id });
+    const passwordHash = await argon2.hash(input.password, HASH_OPTIONS);
 
     try {
       const user = await this.users.create({ email, name: input.name, passwordHash });
-      return this.buildResult(user);
+      return this.startSession(user);
     } catch (error) {
       // The check above is not atomic; the unique index is what actually decides.
       if (isDuplicateKeyError(error)) {
@@ -49,21 +75,81 @@ export class AuthService {
     }
   }
 
-  async signIn(input: SignInInput): Promise<AuthResult> {
+  async signIn(input: SignInInput): Promise<AuthSession> {
     const user = await this.users.findByEmailWithPassword(input.email.toLowerCase());
 
-    // Unknown email and wrong password must be indistinguishable.
-    if (!user || !(await argon2.verify(user.passwordHash, input.password))) {
-      throw new UnauthorizedException('Invalid email or password');
+    // Both branches run exactly one argon2.verify, so an unknown email costs the
+    // same as a wrong password and returns the same 401.
+    const passwordMatches = await argon2.verify(
+      user ? user.passwordHash : await DUMMY_PASSWORD_HASH,
+      input.password,
+    );
+
+    if (!user || !passwordMatches) {
+      throw new UnauthorizedException(INVALID_CREDENTIALS);
     }
 
-    return this.buildResult(user);
+    return this.startSession(user);
   }
 
-  private async buildResult(user: Parameters<typeof toPublicUser>[0]): Promise<AuthResult> {
-    const publicUser = toPublicUser(user);
-    const payload: JwtPayload = { sub: publicUser.id, email: publicUser.email };
+  async refresh(rawToken: string | undefined): Promise<RefreshResult> {
+    if (!rawToken) {
+      throw new UnauthorizedException(INVALID_REFRESH_TOKEN);
+    }
 
-    return { user: publicUser, accessToken: await this.jwt.signAsync(payload) };
+    const record = await this.refreshTokens.findByRawToken(rawToken);
+
+    if (!record) {
+      throw new UnauthorizedException(INVALID_REFRESH_TOKEN);
+    }
+
+    // Reuse detection: a revoked token presented again means it leaked, so kill
+    // the whole family rather than just this record.
+    if (record.revokedAt) {
+      await this.refreshTokens.revokeAllForUser(record.userId);
+      throw new UnauthorizedException(INVALID_REFRESH_TOKEN);
+    }
+
+    if (record.expiresAt.getTime() <= Date.now()) {
+      throw new UnauthorizedException(INVALID_REFRESH_TOKEN);
+    }
+
+    const user = await this.users.findById(record.userId.toString());
+
+    if (!user) {
+      throw new UnauthorizedException(INVALID_REFRESH_TOKEN);
+    }
+
+    await this.refreshTokens.revoke(record._id);
+
+    return {
+      accessToken: await this.signAccessToken(user),
+      refreshToken: await this.refreshTokens.issue(user._id),
+    };
+  }
+
+  async signOut(rawToken: string | undefined): Promise<void> {
+    if (!rawToken) {
+      return;
+    }
+
+    const record = await this.refreshTokens.findByRawToken(rawToken);
+
+    if (record && !record.revokedAt) {
+      await this.refreshTokens.revoke(record._id);
+    }
+  }
+
+  private async startSession(user: UserDocument): Promise<AuthSession> {
+    return {
+      user: toPublicUser(user),
+      accessToken: await this.signAccessToken(user),
+      refreshToken: await this.refreshTokens.issue(user._id),
+    };
+  }
+
+  private async signAccessToken(user: UserDocument): Promise<string> {
+    const payload: JwtPayload = { sub: user._id.toString(), email: user.email };
+    return this.jwt.signAsync(payload);
   }
 }
