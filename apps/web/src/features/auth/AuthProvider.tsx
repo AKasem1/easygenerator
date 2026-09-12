@@ -43,33 +43,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     bootstrapped.current = true;
-    let cancelled = false;
 
+    // No cancellation flag here on purpose. StrictMode runs the effect, its
+    // cleanup, then the effect again; the ref makes the second run a no-op, so
+    // a flag set by the first cleanup would never be cleared and the loading
+    // state would stick forever. Setting state after unmount is a no-op in
+    // React 18+, so letting this finish is safe.
     const restore = async () => {
       try {
         const token = await refreshAccessToken();
-        const currentUser = await fetchCurrentUser();
-
-        if (!cancelled) {
-          applySession(token, currentUser);
-        }
+        applySession(token, await fetchCurrentUser());
       } catch {
-        // 401 here just means nobody is signed in.
-        if (!cancelled) {
-          clearSession();
-        }
+        // A 401 here just means nobody is signed in.
+        clearSession();
       } finally {
-        if (!cancelled) {
-          setIsLoading(false);
-        }
+        setIsLoading(false);
       }
     };
 
     void restore();
-
-    return () => {
-      cancelled = true;
-    };
   }, [applySession, clearSession]);
 
   useEffect(() => {

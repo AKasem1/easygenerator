@@ -25,6 +25,9 @@ export default defineConfig({
 
   server: {
     port: 5173,
+    // Fail instead of drifting to 5174: the API's CORS_ORIGIN names this exact
+    // port, so a silent move produces requests the API rejects.
+    strictPort: true,
   },
 
   test: {

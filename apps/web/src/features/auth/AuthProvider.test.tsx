@@ -1,4 +1,5 @@
 import { render, screen, waitFor } from '@testing-library/react';
+import { StrictMode } from 'react';
 import { AxiosError } from 'axios';
 import type { AxiosResponse, InternalAxiosRequestConfig } from 'axios';
 import { MemoryRouter, Route, Routes } from 'react-router';
@@ -122,5 +123,24 @@ describe('AuthProvider bootstrap', () => {
     });
 
     expect(refreshCalls).toBe(1);
+  });
+
+  it('settles the bootstrap under StrictMode, as main.tsx renders it', async () => {
+    refreshClient.defaults.adapter = async (config) => {
+      await delay(10);
+      return ok(config, { accessToken: 'restored-token' });
+    };
+    apiClient.defaults.adapter = async (config) => ok(config, USER);
+
+    render(
+      <StrictMode>
+        <Harness />
+      </StrictMode>,
+    );
+
+    // Without this working the spinner never goes away.
+    await waitFor(() => {
+      expect(screen.getByText('protected content')).toBeInTheDocument();
+    });
   });
 });
