@@ -1,4 +1,4 @@
-import { ConflictException, Injectable, UnauthorizedException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as argon2 from 'argon2';
 import { randomBytes } from 'node:crypto';
@@ -9,6 +9,11 @@ import type { UserDocument } from '../users/user.schema';
 import { UsersService } from '../users/users.service';
 import type { SignInInput, SignUpInput } from './auth.contracts';
 import type { JwtPayload } from './jwt.types';
+import {
+  EmailAlreadyExistsException,
+  InvalidCredentialsException,
+  InvalidRefreshTokenException,
+} from '../common/app.exception';
 import { RefreshTokensService } from './refresh-tokens.service';
 
 export interface AuthSession {
@@ -23,8 +28,6 @@ export interface RefreshResult {
 }
 
 const DUPLICATE_KEY_ERROR = 11000;
-const INVALID_CREDENTIALS = 'Invalid email or password';
-const INVALID_REFRESH_TOKEN = 'Invalid refresh token';
 
 const HASH_OPTIONS = { type: argon2.argon2id } as const;
 
@@ -58,7 +61,7 @@ export class AuthService {
     const email = input.email.toLowerCase();
 
     if (await this.users.findByEmail(email)) {
-      throw new ConflictException('Email already registered');
+      throw new EmailAlreadyExistsException();
     }
 
     const passwordHash = await argon2.hash(input.password, HASH_OPTIONS);
@@ -69,7 +72,7 @@ export class AuthService {
     } catch (error) {
       // The check above is not atomic; the unique index is what actually decides.
       if (isDuplicateKeyError(error)) {
-        throw new ConflictException('Email already registered');
+        throw new EmailAlreadyExistsException();
       }
       throw error;
     }
@@ -86,7 +89,7 @@ export class AuthService {
     );
 
     if (!user || !passwordMatches) {
-      throw new UnauthorizedException(INVALID_CREDENTIALS);
+      throw new InvalidCredentialsException();
     }
 
     return this.startSession(user);
@@ -94,30 +97,30 @@ export class AuthService {
 
   async refresh(rawToken: string | undefined): Promise<RefreshResult> {
     if (!rawToken) {
-      throw new UnauthorizedException(INVALID_REFRESH_TOKEN);
+      throw new InvalidRefreshTokenException();
     }
 
     const record = await this.refreshTokens.findByRawToken(rawToken);
 
     if (!record) {
-      throw new UnauthorizedException(INVALID_REFRESH_TOKEN);
+      throw new InvalidRefreshTokenException();
     }
 
     // Reuse detection: a revoked token presented again means it leaked, so kill
     // the whole family rather than just this record.
     if (record.revokedAt) {
       await this.refreshTokens.revokeAllForUser(record.userId);
-      throw new UnauthorizedException(INVALID_REFRESH_TOKEN);
+      throw new InvalidRefreshTokenException();
     }
 
     if (record.expiresAt.getTime() <= Date.now()) {
-      throw new UnauthorizedException(INVALID_REFRESH_TOKEN);
+      throw new InvalidRefreshTokenException();
     }
 
     const user = await this.users.findById(record.userId.toString());
 
     if (!user) {
-      throw new UnauthorizedException(INVALID_REFRESH_TOKEN);
+      throw new InvalidRefreshTokenException();
     }
 
     await this.refreshTokens.revoke(record._id);
