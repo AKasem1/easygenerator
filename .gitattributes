@@ -1,5 +1,4 @@
-# Normalize to LF in the repo and in working trees. Prettier is configured with
-# endOfLine: "lf", so without this `pnpm lint` fails on Windows checkouts.
+# Prettier is configured with endOfLine: lf, so pin LF on Windows checkouts.
 * text=auto eol=lf
 
 *.png binary

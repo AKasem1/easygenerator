@@ -16,8 +16,6 @@
       "@/*": ["./src/*"],
       "@shared": ["../../shared/index.ts"],
       "@shared/*": ["../../shared/*"],
-      /* shared/ lives above this app, so Node/TS resolution from those files
-         cannot see apps/web/node_modules. Pin zod to this app's single copy. */
       "zod": ["./node_modules/zod"]
     }
   },

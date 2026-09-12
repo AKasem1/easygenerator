@@ -7,13 +7,7 @@ import prettier from 'eslint-config-prettier';
 
 export default tseslint.config(
   {
-    ignores: [
-      '**/node_modules/**',
-      '**/dist/**',
-      '**/coverage/**',
-      '**/*.tsbuildinfo',
-      'apps/web/src/vite-env.d.ts',
-    ],
+    ignores: ['**/node_modules/**', '**/dist/**', '**/coverage/**', 'apps/web/src/vite-env.d.ts'],
   },
 
   js.configs.recommended,
@@ -21,7 +15,6 @@ export default tseslint.config(
 
   {
     rules: {
-      // The project bans `any` outright rather than merely discouraging it.
       '@typescript-eslint/no-explicit-any': 'error',
       '@typescript-eslint/consistent-type-imports': ['error', { prefer: 'type-imports' }],
       '@typescript-eslint/no-unused-vars': [
@@ -32,33 +25,14 @@ export default tseslint.config(
     },
   },
 
-  // --- apps/api : Node + Nest decorators ---
   {
     files: ['apps/api/**/*.ts'],
-    languageOptions: {
-      globals: { ...globals.node },
-    },
-    rules: {
-      // Nest resolves providers from decorator metadata, so empty ctor params
-      // and decorator-only classes are idiomatic here.
-      '@typescript-eslint/no-extraneous-class': 'off',
-    },
+    languageOptions: { globals: { ...globals.node } },
   },
 
-  // --- shared : isomorphic, no environment globals ---
-  {
-    files: ['shared/**/*.ts'],
-    languageOptions: {
-      globals: {},
-    },
-  },
-
-  // --- apps/web : browser + React ---
   {
     files: ['apps/web/**/*.{ts,tsx}'],
-    languageOptions: {
-      globals: { ...globals.browser },
-    },
+    languageOptions: { globals: { ...globals.browser } },
     plugins: {
       'react-hooks': reactHooks,
       'react-refresh': reactRefresh,
@@ -70,12 +44,15 @@ export default tseslint.config(
     },
   },
 
-  // --- config files & test setup run in Node ---
   {
-    files: ['**/*.config.{ts,mts,mjs,js}', '**/scripts/**/*.mjs', 'apps/web/src/test/**/*.ts'],
-    languageOptions: {
-      globals: { ...globals.node },
-    },
+    files: ['**/scripts/**'],
+    languageOptions: { globals: { ...globals.node } },
+    rules: { 'no-console': 'off' },
+  },
+
+  {
+    files: ['**/*.config.{ts,mts,mjs,js}', 'apps/web/src/test/**/*.ts'],
+    languageOptions: { globals: { ...globals.node } },
   },
 
   prettier,
