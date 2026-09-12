@@ -8,7 +8,7 @@
     "node": ">=22"
   },
   "scripts": {
-    "postinstall": "pnpm -C apps/api install && pnpm -C apps/web install",
+    "postinstall": "pnpm -C apps/api install --ignore-scripts && pnpm -C apps/web install --ignore-scripts",
     "dev": "concurrently -k -n api,web -c cyan,magenta \"pnpm -C apps/api dev\" \"pnpm -C apps/web dev\"",
     "dev:api": "pnpm -C apps/api dev",
     "dev:web": "pnpm -C apps/web dev",
