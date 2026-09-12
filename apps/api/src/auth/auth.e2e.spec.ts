@@ -1,13 +1,33 @@
 import type { INestApplication } from '@nestjs/common';
+import type { NestExpressApplication } from '@nestjs/platform-express';
 import { Test } from '@nestjs/testing';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import request from 'supertest';
+
+import { REFRESH_COOKIE_NAME } from './refresh-cookie';
 
 const CREDENTIALS = {
   email: 'ada@example.com',
   name: 'Ada Lovelace',
   password: 'sup3r!secret',
 };
+
+/** Pulls the refresh cookie value out of a Set-Cookie header list. */
+function readRefreshCookie(headers: Record<string, unknown>): string {
+  const raw = headers['set-cookie'] as string[] | undefined;
+  const cookie = raw?.find((entry) => entry.startsWith(`${REFRESH_COOKIE_NAME}=`));
+
+  if (!cookie) {
+    throw new Error('no refresh cookie on response');
+  }
+
+  return cookie.split(';')[0]!;
+}
+
+function refreshCookieAttributes(headers: Record<string, unknown>): string {
+  const raw = headers['set-cookie'] as string[] | undefined;
+  return raw?.find((entry) => entry.startsWith(`${REFRESH_COOKIE_NAME}=`)) ?? '';
+}
 
 describe('auth flow (e2e)', () => {
   let mongo: MongoMemoryServer;
@@ -23,11 +43,12 @@ describe('auth flow (e2e)', () => {
     process.env.CORS_ORIGIN = 'http://localhost:5173';
 
     const { AppModule } = await import('../app.module');
+    const { configureApp } = await import('../app.setup');
 
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
 
-    app = moduleRef.createNestApplication();
-    app.setGlobalPrefix('api/v1', { exclude: ['health'] });
+    app = moduleRef.createNestApplication<NestExpressApplication>({ bodyParser: false });
+    configureApp(app as NestExpressApplication, { corsOrigin: 'http://localhost:5173' });
     await app.init();
   }, 120_000);
 
@@ -49,7 +70,13 @@ describe('auth flow (e2e)', () => {
       createdAt: expect.any(String),
     });
     expect(signUp.body.accessToken).toEqual(expect.any(String));
+    expect(signUp.body.refreshToken).toBeUndefined();
     expect(JSON.stringify(signUp.body)).not.toContain('passwordHash');
+
+    const attributes = refreshCookieAttributes(signUp.headers);
+    expect(attributes).toContain('HttpOnly');
+    expect(attributes).toContain('SameSite=Strict');
+    expect(attributes).toContain('Path=/api/v1/auth');
 
     const signIn = await request(app.getHttpServer())
       .post('/api/v1/auth/sign-in')
@@ -101,5 +128,91 @@ describe('auth flow (e2e)', () => {
       .expect(401);
 
     expect(unknownEmail.body).toEqual(wrongPassword.body);
+  });
+
+  describe('refresh token rotation', () => {
+    async function freshSession() {
+      const signIn = await request(app.getHttpServer())
+        .post('/api/v1/auth/sign-in')
+        .send({ email: CREDENTIALS.email, password: CREDENTIALS.password })
+        .expect(200);
+
+      return {
+        accessToken: signIn.body.accessToken as string,
+        cookie: readRefreshCookie(signIn.headers),
+      };
+    }
+
+    it('rotates: returns a new access token and a new cookie', async () => {
+      const session = await freshSession();
+
+      const refreshed = await request(app.getHttpServer())
+        .post('/api/v1/auth/refresh')
+        .set('Cookie', session.cookie)
+        .expect(200);
+
+      expect(refreshed.body.accessToken).toEqual(expect.any(String));
+      expect(readRefreshCookie(refreshed.headers)).not.toBe(session.cookie);
+    });
+
+    it('rejects the previous refresh token after rotation', async () => {
+      const session = await freshSession();
+
+      await request(app.getHttpServer())
+        .post('/api/v1/auth/refresh')
+        .set('Cookie', session.cookie)
+        .expect(200);
+
+      await request(app.getHttpServer())
+        .post('/api/v1/auth/refresh')
+        .set('Cookie', session.cookie)
+        .expect(401);
+    });
+
+    it('reuse detection: replaying a revoked token kills the newly issued one too', async () => {
+      const session = await freshSession();
+
+      const rotated = await request(app.getHttpServer())
+        .post('/api/v1/auth/refresh')
+        .set('Cookie', session.cookie)
+        .expect(200);
+
+      const newCookie = readRefreshCookie(rotated.headers);
+
+      // Replaying the old (revoked) token is the theft signal.
+      await request(app.getHttpServer())
+        .post('/api/v1/auth/refresh')
+        .set('Cookie', session.cookie)
+        .expect(401);
+
+      // The whole family is now dead, including the token issued a moment ago.
+      await request(app.getHttpServer())
+        .post('/api/v1/auth/refresh')
+        .set('Cookie', newCookie)
+        .expect(401);
+    });
+
+    it('rejects refresh with no cookie at all', async () => {
+      await request(app.getHttpServer()).post('/api/v1/auth/refresh').expect(401);
+    });
+
+    it('signs out, revoking the current refresh token', async () => {
+      const session = await freshSession();
+
+      await request(app.getHttpServer())
+        .post('/api/v1/auth/sign-out')
+        .set('Authorization', `Bearer ${session.accessToken}`)
+        .set('Cookie', session.cookie)
+        .expect(204);
+
+      await request(app.getHttpServer())
+        .post('/api/v1/auth/refresh')
+        .set('Cookie', session.cookie)
+        .expect(401);
+    });
+
+    it('rejects sign-out without an access token', async () => {
+      await request(app.getHttpServer()).post('/api/v1/auth/sign-out').expect(401);
+    });
   });
 });
