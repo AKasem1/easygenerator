@@ -28,6 +28,11 @@ export default tseslint.config(
   {
     files: ['apps/api/**/*.ts'],
     languageOptions: { globals: { ...globals.node } },
+    rules: {
+      // Nest reads constructor types from design:paramtypes at runtime; rewriting
+      // injected imports to `import type` erases them and breaks DI.
+      '@typescript-eslint/consistent-type-imports': 'off',
+    },
   },
 
   {
