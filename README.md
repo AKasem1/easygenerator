@@ -79,6 +79,35 @@ an already-revoked token is treated as theft and revokes every refresh token for
 Passwords use argon2id; refresh tokens use sha256, because 32 bytes of CSPRNG output has no
 dictionary to attack and a memory-hard hash would only add latency to every refresh.
 
+## Cross-cutting behaviour
+
+Every error response uses one envelope:
+
+```json
+{
+  "statusCode": 422,
+  "errorCode": "VALIDATION_FAILED",
+  "message": "Validation failed",
+  "requestId": "01M29RHZ5XPKE6RY1BJVDXZTYA",
+  "timestamp": "2026-09-12T02:53:43.487Z",
+  "fields": { "email": "Enter a valid email address" }
+}
+```
+
+`errorCode` is a stable string exported from `@shared` as the `ErrorCode` union, so the frontend
+switches on a typed value. `fields` appears only on VALIDATION_FAILED. Unhandled exceptions log the
+full stack server-side and return a flat 500 INTERNAL_ERROR carrying no driver text or class names.
+
+Requests carry a ULID request id, taken from `x-request-id` when the client supplies one. It is
+echoed in the response header, included in the envelope and attached to every log line.
+
+Logs redact `authorization`, `cookie`, `set-cookie` and `req.body.password`; pretty in development,
+JSON in production.
+
+Rate limits default to 100/min globally and 5/min on sign-up, sign-in and refresh. All three are
+overridable via `THROTTLE_TTL_MS`, `THROTTLE_GLOBAL_LIMIT` and `THROTTLE_AUTH_LIMIT`, which is how
+the functional e2e raises them without disabling the guard.
+
 ## Notes
 
 - `.env` is gitignored; `.env.example` is the template. It deliberately omits `NODE_ENV` — Vite
