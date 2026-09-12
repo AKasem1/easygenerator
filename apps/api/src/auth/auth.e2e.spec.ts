@@ -41,6 +41,10 @@ describe('auth flow (e2e)', () => {
     process.env.MONGODB_URI = mongo.getUri();
     process.env.JWT_SECRET = 'e2e-only-secret';
     process.env.CORS_ORIGIN = 'http://localhost:5173';
+    // Rate limiting has its own suite; these flows sign in repeatedly and would
+    // otherwise trip the 5/min limit. The guard stays active, just permissive.
+    process.env.THROTTLE_GLOBAL_LIMIT = '100000';
+    process.env.THROTTLE_AUTH_LIMIT = '100000';
 
     const { AppModule } = await import('../app.module');
     const { configureApp } = await import('../app.setup');
@@ -109,11 +113,11 @@ describe('auth flow (e2e)', () => {
       .expect(409);
   });
 
-  it('rejects a weak password with 400 from the shared schema', async () => {
+  it('rejects a weak password with 422 from the shared schema', async () => {
     await request(app.getHttpServer())
       .post('/api/v1/auth/sign-up')
       .send({ email: 'other@example.com', name: 'Other Person', password: 'short' })
-      .expect(400);
+      .expect(422);
   });
 
   it('returns the same 401 for unknown email and wrong password', async () => {
@@ -127,7 +131,99 @@ describe('auth flow (e2e)', () => {
       .send({ email: CREDENTIALS.email, password: 'wrong-password' })
       .expect(401);
 
-    expect(unknownEmail.body).toEqual(wrongPassword.body);
+    const stable = (body: Record<string, unknown>) => ({
+      statusCode: body.statusCode,
+      errorCode: body.errorCode,
+      message: body.message,
+    });
+
+    expect(stable(unknownEmail.body)).toEqual(stable(wrongPassword.body));
+  });
+
+  describe('error envelope', () => {
+    const ENVELOPE = {
+      statusCode: expect.any(Number),
+      errorCode: expect.any(String),
+      message: expect.any(String),
+      requestId: expect.any(String),
+      timestamp: expect.any(String),
+    };
+
+    it('401 UNAUTHORIZED for a missing access token', async () => {
+      const res = await request(app.getHttpServer()).get('/api/v1/users/me').expect(401);
+
+      expect(res.body).toEqual({ ...ENVELOPE, statusCode: 401, errorCode: 'UNAUTHORIZED' });
+    });
+
+    it('401 INVALID_CREDENTIALS for a bad sign-in', async () => {
+      const res = await request(app.getHttpServer())
+        .post('/api/v1/auth/sign-in')
+        .send({ email: CREDENTIALS.email, password: 'wrong-password' })
+        .expect(401);
+
+      expect(res.body).toEqual({ ...ENVELOPE, statusCode: 401, errorCode: 'INVALID_CREDENTIALS' });
+    });
+
+    it('401 INVALID_REFRESH_TOKEN for a bad refresh', async () => {
+      const res = await request(app.getHttpServer())
+        .post('/api/v1/auth/refresh')
+        .set('Cookie', 'refresh_token=not-a-real-token')
+        .expect(401);
+
+      expect(res.body).toEqual({
+        ...ENVELOPE,
+        statusCode: 401,
+        errorCode: 'INVALID_REFRESH_TOKEN',
+      });
+    });
+
+    it('409 EMAIL_ALREADY_EXISTS', async () => {
+      const res = await request(app.getHttpServer())
+        .post('/api/v1/auth/sign-up')
+        .send({ ...CREDENTIALS, name: 'Someone Else' })
+        .expect(409);
+
+      expect(res.body).toEqual({
+        ...ENVELOPE,
+        statusCode: 409,
+        errorCode: 'EMAIL_ALREADY_EXISTS',
+      });
+    });
+
+    it('422 VALIDATION_FAILED carries a fields map', async () => {
+      const res = await request(app.getHttpServer())
+        .post('/api/v1/auth/sign-up')
+        .send({ email: 'not-an-email', name: 'Jo', password: 'short' })
+        .expect(422);
+
+      expect(res.body).toEqual({
+        ...ENVELOPE,
+        statusCode: 422,
+        errorCode: 'VALIDATION_FAILED',
+        fields: {
+          email: expect.any(String),
+          name: expect.any(String),
+          password: expect.any(String),
+        },
+      });
+    });
+
+    it('echoes a supplied x-request-id into the header and the envelope', async () => {
+      const res = await request(app.getHttpServer())
+        .get('/api/v1/users/me')
+        .set('x-request-id', 'req-from-the-client')
+        .expect(401);
+
+      expect(res.headers['x-request-id']).toBe('req-from-the-client');
+      expect(res.body.requestId).toBe('req-from-the-client');
+    });
+
+    it('generates a request id when the client does not supply one', async () => {
+      const res = await request(app.getHttpServer()).get('/api/v1/users/me').expect(401);
+
+      expect(res.body.requestId).toMatch(/^[0-9A-HJKMNP-TV-Z]{26}$/);
+      expect(res.headers['x-request-id']).toBe(res.body.requestId);
+    });
   });
 
   describe('refresh token rotation', () => {

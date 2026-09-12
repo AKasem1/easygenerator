@@ -1,9 +1,14 @@
-import { ConflictException, UnauthorizedException } from '@nestjs/common';
+import { HttpException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { Test } from '@nestjs/testing';
 import * as argon2 from 'argon2';
 import { Types } from 'mongoose';
 
+import {
+  EmailAlreadyExistsException,
+  InvalidCredentialsException,
+  InvalidRefreshTokenException,
+} from '../common/app.exception';
 import type { UserDocument } from '../users/user.schema';
 import { UsersService } from '../users/users.service';
 import { AuthService } from './auth.service';
@@ -141,7 +146,7 @@ describe('AuthService', () => {
     it('rejects a duplicate email found by the pre-check', async () => {
       users.findByEmail.mockResolvedValue(fakeUser());
 
-      await expect(service.signUp(SIGN_UP)).rejects.toBeInstanceOf(ConflictException);
+      await expect(service.signUp(SIGN_UP)).rejects.toBeInstanceOf(EmailAlreadyExistsException);
       expect(users.create).not.toHaveBeenCalled();
     });
 
@@ -151,7 +156,7 @@ describe('AuthService', () => {
         Object.assign(new Error('E11000 duplicate key'), { code: 11000 }),
       );
 
-      await expect(service.signUp(SIGN_UP)).rejects.toBeInstanceOf(ConflictException);
+      await expect(service.signUp(SIGN_UP)).rejects.toBeInstanceOf(EmailAlreadyExistsException);
     });
 
     it('does not swallow unrelated write failures', async () => {
@@ -190,7 +195,7 @@ describe('AuthService', () => {
 
       await expect(
         service.signIn({ email: SIGN_UP.email, password: 'wrong-password' }),
-      ).rejects.toBeInstanceOf(UnauthorizedException);
+      ).rejects.toBeInstanceOf(InvalidCredentialsException);
     });
 
     // Behavioural stand-in for the timing property. A real timing assertion would
@@ -201,7 +206,7 @@ describe('AuthService', () => {
 
       await expect(
         service.signIn({ email: 'nobody@example.com', password: SIGN_UP.password }),
-      ).rejects.toBeInstanceOf(UnauthorizedException);
+      ).rejects.toBeInstanceOf(InvalidCredentialsException);
 
       expect(verify).toHaveBeenCalledTimes(1);
       expect(verify.mock.calls[0]![0]).toMatch(/^\$argon2id\$/);
@@ -225,30 +230,30 @@ describe('AuthService', () => {
       users.findByEmailWithPassword.mockResolvedValue(null);
       const unknownEmail = await service
         .signIn({ email: 'nobody@example.com', password: SIGN_UP.password })
-        .catch((error: UnauthorizedException) => error);
+        .catch((error: HttpException) => error);
 
       users.findByEmailWithPassword.mockResolvedValue(fakeUser({ passwordHash }));
       const wrongPassword = await service
         .signIn({ email: SIGN_UP.email, password: 'wrong-password' })
-        .catch((error: UnauthorizedException) => error);
+        .catch((error: HttpException) => error);
 
-      expect(unknownEmail).toBeInstanceOf(UnauthorizedException);
-      expect(wrongPassword).toBeInstanceOf(UnauthorizedException);
-      expect((unknownEmail as UnauthorizedException).getResponse()).toEqual(
-        (wrongPassword as UnauthorizedException).getResponse(),
+      expect(unknownEmail).toBeInstanceOf(InvalidCredentialsException);
+      expect(wrongPassword).toBeInstanceOf(InvalidCredentialsException);
+      expect((unknownEmail as HttpException).getResponse()).toEqual(
+        (wrongPassword as HttpException).getResponse(),
       );
     });
   });
 
   describe('refresh', () => {
     it('rejects a missing token', async () => {
-      await expect(service.refresh(undefined)).rejects.toBeInstanceOf(UnauthorizedException);
+      await expect(service.refresh(undefined)).rejects.toBeInstanceOf(InvalidRefreshTokenException);
     });
 
     it('rejects an unknown token', async () => {
       refreshTokens.findByRawToken.mockResolvedValue(null);
 
-      await expect(service.refresh('nope')).rejects.toBeInstanceOf(UnauthorizedException);
+      await expect(service.refresh('nope')).rejects.toBeInstanceOf(InvalidRefreshTokenException);
     });
 
     it('rejects an expired token', async () => {
@@ -256,7 +261,7 @@ describe('AuthService', () => {
         fakeRefreshRecord({ expiresAt: new Date(Date.now() - 1) }),
       );
 
-      await expect(service.refresh('stale')).rejects.toBeInstanceOf(UnauthorizedException);
+      await expect(service.refresh('stale')).rejects.toBeInstanceOf(InvalidRefreshTokenException);
       expect(refreshTokens.issue).not.toHaveBeenCalled();
     });
 
@@ -278,7 +283,7 @@ describe('AuthService', () => {
     it('revokes the whole family when a revoked token is replayed', async () => {
       refreshTokens.findByRawToken.mockResolvedValue(fakeRefreshRecord({ revokedAt: new Date() }));
 
-      await expect(service.refresh('stolen')).rejects.toBeInstanceOf(UnauthorizedException);
+      await expect(service.refresh('stolen')).rejects.toBeInstanceOf(InvalidRefreshTokenException);
 
       expect(refreshTokens.revokeAllForUser).toHaveBeenCalledWith(USER_ID);
       expect(refreshTokens.issue).not.toHaveBeenCalled();
