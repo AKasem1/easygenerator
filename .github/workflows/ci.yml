@@ -35,6 +35,9 @@ jobs:
             apps/web/pnpm-lock.yaml
 
       - name: Install
+        # App installs run with --ignore-scripts via the root postinstall:
+        # argon2 ships a prebuilt binary, and approving build scripts would
+        # require a pnpm-workspace.yaml this repo must not have.
         run: pnpm install --frozen-lockfile
 
       - name: Lint

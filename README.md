@@ -67,3 +67,8 @@ entrypoint, so `node dist/main.js` works regardless of that layout.
   unless approved in a `pnpm-workspace.yaml`. Use `pnpm dlx @nestjs/cli generate ...` when you need
   the generators; `nest-cli.json` is present for it.
 - Nest 12 is ESM-only, which Jest cannot `require` on Node 22, so both apps test with Vitest.
+- App installs run with `--ignore-scripts` (via the root `postinstall`). argon2 ships a prebuilt
+  binary, and approving its install script would require a `pnpm-workspace.yaml`. Run installs from
+  the repo root, not inside an app.
+- `@typescript-eslint/consistent-type-imports` is off for `apps/api`: rewriting an injected import to
+  `import type` erases the runtime class and breaks Nest DI.
