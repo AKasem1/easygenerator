@@ -14,6 +14,9 @@ export function AppPage() {
 
     try {
       await signOut();
+    } catch {
+      // Best effort: the provider clears local state regardless, and leaving
+      // the rejection unhandled would crash the page when the API is down.
     } finally {
       navigate('/sign-in', { replace: true });
     }
