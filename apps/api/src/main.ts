@@ -2,30 +2,16 @@ import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
 import type { NestExpressApplication } from '@nestjs/platform-express';
-import cookieParser from 'cookie-parser';
-import express from 'express';
-import helmet from 'helmet';
 
 import { AppModule } from './app.module';
-import { parseCorsOrigins } from './config/env.validation';
+import { configureApp } from './app.setup';
 import type { Env } from './config/env.validation';
 
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create<NestExpressApplication>(AppModule, { bodyParser: false });
   const config = app.get(ConfigService<Env, true>);
 
-  app.use(helmet());
-  app.use(cookieParser());
-  app.use(express.json({ limit: '10kb' }));
-  app.use(express.urlencoded({ extended: true, limit: '10kb' }));
-
-  app.enableCors({
-    origin: parseCorsOrigins(config.get('CORS_ORIGIN', { infer: true })),
-    credentials: true,
-  });
-
-  // /health stays unprefixed for infrastructure probes.
-  app.setGlobalPrefix('api/v1', { exclude: ['health'] });
+  configureApp(app, { corsOrigin: config.get('CORS_ORIGIN', { infer: true }) });
 
   const port = config.get('API_PORT', { infer: true });
   await app.listen(port, '0.0.0.0');
