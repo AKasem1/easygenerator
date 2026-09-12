@@ -5,6 +5,7 @@ export const ERROR_CODES = [
   'VALIDATION_FAILED',
   'UNAUTHORIZED',
   'TOO_MANY_REQUESTS',
+  'NOT_FOUND',
   'INTERNAL_ERROR',
 ] as const;
 

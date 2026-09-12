@@ -16,7 +16,7 @@ async function bootstrap(): Promise<void> {
   app.useLogger(app.get(Logger));
 
   const config = app.get(ConfigService<Env, true>);
-  configureApp(app, { corsOrigin: config.get('CORS_ORIGIN', { infer: true }) });
+  await configureApp(app, { corsOrigin: config.get('CORS_ORIGIN', { infer: true }) });
 
   const port = config.get('API_PORT', { infer: true });
   await app.listen(port, '0.0.0.0');

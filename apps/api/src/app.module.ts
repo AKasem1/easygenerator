@@ -31,12 +31,8 @@ import { UsersModule } from './users/users.module';
           pinoHttp: {
             level: isProduction ? 'info' : 'debug',
             transport: isProduction ? undefined : { target: 'pino-pretty' },
-            genReqId: (req, res) => {
-              const incoming = req.headers['x-request-id'];
-              const id = typeof incoming === 'string' && incoming.length > 0 ? incoming : ulid();
-              res.setHeader('x-request-id', id);
-              return id;
-            },
+            // requestId() middleware already assigned and echoed the id.
+            genReqId: (req) => (req as { id?: string }).id ?? ulid(),
             redact: {
               paths: [
                 'req.headers.authorization',

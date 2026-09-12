@@ -52,8 +52,7 @@ describe('auth flow (e2e)', () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
 
     app = moduleRef.createNestApplication<NestExpressApplication>({ bodyParser: false });
-    configureApp(app as NestExpressApplication, { corsOrigin: 'http://localhost:5173' });
-    await app.init();
+    await configureApp(app as NestExpressApplication, { corsOrigin: 'http://localhost:5173' });
   }, 120_000);
 
   afterAll(async () => {
@@ -206,6 +205,31 @@ describe('auth flow (e2e)', () => {
           password: expect.any(String),
         },
       });
+    });
+
+    it('404 NOT_FOUND for a path outside the api prefix', async () => {
+      const res = await request(app.getHttpServer()).get('/').expect(404);
+
+      expect(res.body).toEqual({ ...ENVELOPE, statusCode: 404, errorCode: 'NOT_FOUND' });
+      expect(res.body.message).toBe('Route not found');
+      expect(res.headers['content-type']).toContain('application/json');
+      expect(res.headers['x-request-id']).toBe(res.body.requestId);
+    });
+
+    it('404 NOT_FOUND for an unknown route under the api prefix', async () => {
+      const res = await request(app.getHttpServer()).get('/api/v1/does-not-exist').expect(404);
+
+      expect(res.body).toEqual({ ...ENVELOPE, statusCode: 404, errorCode: 'NOT_FOUND' });
+    });
+
+    it('echoes a client request id on an unmatched route', async () => {
+      const res = await request(app.getHttpServer())
+        .get('/nope')
+        .set('x-request-id', 'id-on-a-404')
+        .expect(404);
+
+      expect(res.headers['x-request-id']).toBe('id-on-a-404');
+      expect(res.body.requestId).toBe('id-on-a-404');
     });
 
     it('echoes a supplied x-request-id into the header and the envelope', async () => {

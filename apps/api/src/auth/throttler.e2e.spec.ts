@@ -31,8 +31,7 @@ describe('rate limiting (e2e)', () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
 
     app = moduleRef.createNestApplication<NestExpressApplication>({ bodyParser: false });
-    configureApp(app as NestExpressApplication, { corsOrigin: 'http://localhost:5173' });
-    await app.init();
+    await configureApp(app as NestExpressApplication, { corsOrigin: 'http://localhost:5173' });
 
     await request(app.getHttpServer()).post('/api/v1/auth/sign-up').send(CREDENTIALS).expect(201);
   }, 120_000);

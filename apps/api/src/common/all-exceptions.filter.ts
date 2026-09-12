@@ -6,6 +6,8 @@ import { PinoLogger } from 'nestjs-pino';
 
 import type { ApiErrorResponse, ErrorCode } from '@shared';
 import { AppException } from './app.exception';
+import { buildErrorBody } from './error-response';
+import { readRequestId } from './request-id';
 
 @Catch()
 export class AllExceptionsFilter implements ExceptionFilter {
@@ -15,24 +17,26 @@ export class AllExceptionsFilter implements ExceptionFilter {
 
   catch(exception: unknown, host: ArgumentsHost): void {
     const http = host.switchToHttp();
-    const request = http.getRequest<Request & { id?: string }>();
+    const request = http.getRequest<Request>();
     const response = http.getResponse<Response>();
 
     const { statusCode, errorCode, message, fields } = this.describe(exception);
 
     if (statusCode >= HttpStatus.INTERNAL_SERVER_ERROR) {
       // Full detail server-side only; the client gets the flat envelope below.
-      this.logger.error({ err: exception, requestId: request.id }, 'Unhandled exception');
+      this.logger.error(
+        { err: exception, requestId: readRequestId(request) },
+        'Unhandled exception',
+      );
     }
 
-    const body: ApiErrorResponse = {
+    const body: ApiErrorResponse = buildErrorBody({
       statusCode,
       errorCode,
       message,
-      requestId: request.id ?? 'unknown',
-      timestamp: new Date().toISOString(),
-      ...(fields ? { fields } : {}),
-    };
+      requestId: readRequestId(request),
+      fields,
+    });
 
     response.status(statusCode).json(body);
   }
