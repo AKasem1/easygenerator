@@ -1,0 +1,26 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "target": "ES2023",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "jsx": "react-jsx",
+    "types": ["vite/client", "vitest/globals", "@testing-library/jest-dom"],
+    "noEmit": true,
+    "isolatedModules": true,
+    "verbatimModuleSyntax": true,
+    "allowImportingTsExtensions": true,
+    "useDefineForClassFields": true,
+    "paths": {
+      "@/*": ["./src/*"],
+      "@shared": ["../../shared/index.ts"],
+      "@shared/*": ["../../shared/*"],
+      /* shared/ lives above this app, so Node/TS resolution from those files
+         cannot see apps/web/node_modules. Pin zod to this app's single copy. */
+      "zod": ["./node_modules/zod"]
+    }
+  },
+  "include": ["src/**/*.ts", "src/**/*.tsx", "../../shared/**/*.ts"],
+  "exclude": ["node_modules", "dist"]
+}
