@@ -4,8 +4,8 @@
   "private": true,
   "description": "NestJS API",
   "scripts": {
-    "dev": "nest start --watch",
-    "build": "rimraf dist && nest build -p tsconfig.build.json && tsc-alias -p tsconfig.build.json && node scripts/postbuild.mjs",
+    "dev": "pnpm run build && concurrently -k -n tsc,alias,api -c gray,blue,cyan \"tsc -p tsconfig.build.json --watch --preserveWatchOutput\" \"tsc-alias -p tsconfig.build.json --watch\" \"node --watch dist/main.js\"",
+    "build": "rimraf dist && tsc -p tsconfig.build.json && tsc-alias -p tsconfig.build.json && node scripts/postbuild.mjs",
     "start": "node dist/main.js",
     "start:prod": "node dist/main.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
@@ -27,17 +27,14 @@
     "zod": "4.6.2"
   },
   "devDependencies": {
-    "@nestjs/cli": "12.0.0",
-    "@nestjs/schematics": "12.0.1",
     "@nestjs/testing": "12.0.1",
-    "@swc/core": "1.16.2",
     "@types/cookie-parser": "1.4.10",
     "@types/express": "5.0.6",
     "@types/node": "22.20.2",
+    "concurrently": "10.0.5",
     "rimraf": "6.1.3",
-    "tsc-alias": "1.9.5",
+    "tsc-alias": "1.9.4",
     "typescript": "6.0.3",
-    "unplugin-swc": "1.6.0",
     "vitest": "5.0.0"
   }
 }

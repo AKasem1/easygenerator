@@ -7,15 +7,11 @@
     "types": ["node", "vitest/globals"],
     "experimentalDecorators": true,
     "emitDecoratorMetadata": true,
-    /* `shared/` lives outside this app, so the program root is the repo root.
-       That is what lets `include` pull in ../../shared without TS6059. */
     "rootDir": "../..",
     "outDir": "./dist",
     "paths": {
       "@shared": ["../../shared/index"],
       "@shared/*": ["../../shared/*"],
-      /* shared/ lives above this app, so Node/TS resolution from those files
-         cannot see apps/api/node_modules. Pin zod to this app's single copy. */
       "zod": ["./node_modules/zod"]
     }
   },

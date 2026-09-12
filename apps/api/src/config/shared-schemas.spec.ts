@@ -1,7 +1,7 @@
 import { signInSchema, signUpSchema } from '@shared';
 import type { SignUpInput } from '@shared';
 
-/** Proves the `@shared/*` alias resolves in the api at both type and runtime level. */
+// Proves the @shared alias resolves in the api at type and runtime level.
 describe('shared schemas (via @shared alias)', () => {
   it('accepts a valid sign-up payload', () => {
     const input: SignUpInput = {

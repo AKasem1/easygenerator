@@ -1,7 +1,4 @@
-// `shared/` sits outside apps/api, so the TS program root is the repo root and
-// tsc emits to dist/apps/api/src/main.js rather than dist/main.js.
-// This writes a tiny stable entrypoint at dist/main.js so the run command does
-// not depend on that internal layout.
+// shared/ sits above this app, so tsc emits to dist/apps/api/src/main.js; keep a stable entry.
 import { existsSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -11,7 +8,7 @@ const real = resolve(apiRoot, 'dist/apps/api/src/main.js');
 const shim = resolve(apiRoot, 'dist/main.js');
 
 if (!existsSync(real)) {
-  console.error(`postbuild: expected compiled entrypoint at ${real} but it does not exist`);
+  console.error(`postbuild: expected compiled entrypoint at ${real}`);
   process.exit(1);
 }
 

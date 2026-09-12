@@ -11,10 +11,7 @@ import { parseCorsOrigins } from './config/env.validation';
 import type { Env } from './config/env.validation';
 
 async function bootstrap(): Promise<void> {
-  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
-    bodyParser: false,
-  });
-
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, { bodyParser: false });
   const config = app.get(ConfigService<Env, true>);
 
   app.use(helmet());
@@ -27,7 +24,7 @@ async function bootstrap(): Promise<void> {
     credentials: true,
   });
 
-  // `/health` stays unprefixed so infrastructure probes have a stable path.
+  // /health stays unprefixed for infrastructure probes.
   app.setGlobalPrefix('api/v1', { exclude: ['health'] });
 
   const port = config.get('API_PORT', { infer: true });
@@ -37,8 +34,6 @@ async function bootstrap(): Promise<void> {
 }
 
 bootstrap().catch((error: unknown) => {
-  // Config validation and the initial Mongo connection both fail here.
-  // Surface the reason and exit non-zero rather than leaving a half-dead process.
   Logger.error(error instanceof Error ? error.message : String(error), undefined, 'Bootstrap');
   process.exit(1);
 });

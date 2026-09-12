@@ -13,7 +13,6 @@ import { UsersModule } from './modules/users/users.module';
     ConfigModule.forRoot({
       isGlobal: true,
       cache: true,
-      // Single .env at the repo root, shared with docker-compose and the web app.
       envFilePath: ['../../.env', '.env'],
       validate: validateEnv,
     }),
