@@ -1,7 +1,9 @@
 import { Body, Controller, HttpCode, HttpStatus, Post, Req, Res, UseGuards } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { Throttle } from '@nestjs/throttler';
 import type { Request, Response } from 'express';
 
+import { AUTH_RATE_LIMIT, RATE_LIMIT_TTL_MS } from '../common/rate-limit';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import type { Env } from '../config/env.validation';
 import type { PublicUser } from '../users/user.public';
@@ -10,6 +12,8 @@ import type { SignInInput, SignUpInput } from './auth.contracts';
 import { AuthService } from './auth.service';
 import { JwtAuthGuard } from './jwt-auth.guard';
 import { REFRESH_COOKIE_NAME, refreshCookieOptions } from './refresh-cookie';
+
+const SENSITIVE_RATE_LIMIT = { default: { limit: AUTH_RATE_LIMIT, ttl: RATE_LIMIT_TTL_MS } };
 
 interface AuthResponse {
   user: PublicUser;
@@ -24,6 +28,7 @@ export class AuthController {
   ) {}
 
   @Post('sign-up')
+  @Throttle(SENSITIVE_RATE_LIMIT)
   @HttpCode(HttpStatus.CREATED)
   async signUp(
     @Body(new ZodValidationPipe(signUpSchema)) body: SignUpInput,
@@ -36,6 +41,7 @@ export class AuthController {
   }
 
   @Post('sign-in')
+  @Throttle(SENSITIVE_RATE_LIMIT)
   @HttpCode(HttpStatus.OK)
   async signIn(
     @Body(new ZodValidationPipe(signInSchema)) body: SignInInput,
@@ -48,6 +54,7 @@ export class AuthController {
   }
 
   @Post('refresh')
+  @Throttle(SENSITIVE_RATE_LIMIT)
   @HttpCode(HttpStatus.OK)
   async refresh(
     @Req() req: Request,
