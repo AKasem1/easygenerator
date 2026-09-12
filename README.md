@@ -58,6 +58,27 @@ Because `shared/` lives above `apps/api`, the TypeScript program root is the rep
 lands at `dist/apps/api/src/main.js`. A postbuild step writes `dist/main.js` as a stable
 entrypoint, so `node dist/main.js` works regardless of that layout.
 
+## Auth
+
+| Endpoint              | Auth           | Returns                            |
+| --------------------- | -------------- | ---------------------------------- |
+| `POST /auth/sign-up`  | –              | 201 { user, accessToken }          |
+| `POST /auth/sign-in`  | –              | 200 { user, accessToken }          |
+| `POST /auth/refresh`  | refresh cookie | 200 { accessToken }                |
+| `POST /auth/sign-out` | access token   | 204                                |
+| `GET /users/me`       | access token   | 200 { id, email, name, createdAt } |
+
+Access tokens live 15m and are returned in the body only, never in a cookie. The refresh token is
+an httpOnly, SameSite=Strict cookie scoped to `path=/api/v1/auth`, so the browser only sends it to
+refresh and sign-out. Getting that path wrong breaks rotation silently — the cookie is simply never
+sent back.
+
+Refresh tokens rotate on every use: the presented record is revoked and a new one issued. Presenting
+an already-revoked token is treated as theft and revokes every refresh token for that user.
+
+Passwords use argon2id; refresh tokens use sha256, because 32 bytes of CSPRNG output has no
+dictionary to attack and a memory-hard hash would only add latency to every refresh.
+
 ## Notes
 
 - `.env` is gitignored; `.env.example` is the template. It deliberately omits `NODE_ENV` — Vite
